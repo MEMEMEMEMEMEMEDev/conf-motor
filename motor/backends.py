@@ -51,6 +51,26 @@ def completar(idioma: str, orig: str, traduccion: str) -> Resultado:
 MARCAS_GPU = ("cuda", "cudnn", "cublas", "out of memory", "device-side", "nvidia", "gpu")
 
 
+def humanizar(backend: str, e: BaseException) -> str:
+    """Un error de un backend, dicho para quien mira el panel a las tres de
+    la mañana: qué backend, qué pasó, sin volcado de Python."""
+    nombre = {"gpu": "la GPU", "cpu": "la CPU", "gemini": "Gemini"}.get(backend, backend)
+    t = f"{type(e).__name__} {e}".lower()
+    if "timeout" in t or "timed out" in t:
+        return f"{nombre} no respondió a tiempo"
+    if "429" in t or "quota" in t or "resource_exhausted" in t:
+        return f"{nombre}: cuota agotada"
+    if "401" in t or "403" in t or "permission" in t or "credential" in t:
+        return f"{nombre}: la credencial no sirve"
+    if "connection" in t or "name resolution" in t or "unreachable" in t:
+        return f"{nombre}: sin conexión"
+    if backend == "gpu" and es_error_de_gpu(e):
+        return "la GPU falló (error de CUDA)"
+    if "vertex 5" in t:
+        return f"{nombre}: error del servicio"
+    return f"{nombre}: {type(e).__name__}"
+
+
 def es_error_de_gpu(e: BaseException) -> bool:
     t = f"{type(e).__name__} {e}".lower()
     return any(m in t for m in MARCAS_GPU)
@@ -201,7 +221,9 @@ class Gemini:
             "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json",
                                  "responseSchema": ESQUEMA, "thinkingConfig": {"thinkingBudget": 0}},
         }
-        r = self.http.post(self.url, json=cuerpo, timeout=20,
+        # 8 s y no 20: un tramo que tarda más ya llega tarde; mejor que lo
+        # atienda el siguiente backend de la cascada.
+        r = self.http.post(self.url, json=cuerpo, timeout=8,
                            headers={"Authorization": f"Bearer {self._token()}"})
         if r.status_code != 200:
             # El cuerpo de error de Vertex no trae la credencial; igual se

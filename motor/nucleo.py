@@ -27,7 +27,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
-from .backends import es_error_de_gpu
+from .backends import es_error_de_gpu, humanizar
 from .bus import Bus, Tramo
 
 log = logging.getLogger("conf-motor")
@@ -101,19 +101,30 @@ class Nucleo:
         if not t.final and self._ultimo_final.get(t.sala, 0) >= t.seq:
             return  # el final de ese tramo ya salió: el parcial no aporta
 
-        nombre, b = self.backend_para(t.backend)
-        try:
-            res = b.procesar(t, t.glosario)
-        except Exception as e:  # noqa: BLE001
-            if nombre == "gpu" and es_error_de_gpu(e):
-                self._caer_gpu(e)
-                nombre, b = self.backend_para("gpu")
-                try:
-                    res = b.procesar(t, t.glosario)
-                except Exception as e2:  # noqa: BLE001
-                    return self._error(t, nombre, e2)
-            else:
-                return self._error(t, nombre, e)
+        # EN CASCADA: el que pidió la sala, y si falla, los demás en orden
+        # (gpu → gemini → cpu, sin repetir). Un respaldo que atiende el tramo
+        # NO es un error: el subtítulo sale igual, con el backend que lo
+        # atendió, y el panel lo muestra como "pide X → atiende Y". Sólo si
+        # fallan TODOS se publica un error, dicho en castellano.
+        intentos = []
+        res = None
+        nombre = None
+        for pedido in self.cascada(t.backend):
+            nombre, b = self.backend_para(pedido)
+            if b is None or nombre in [n for n, _ in intentos]:
+                continue
+            try:
+                res = b.procesar(t, t.glosario)
+                break
+            except Exception as e:  # noqa: BLE001
+                if nombre == "gpu" and es_error_de_gpu(e):
+                    self._caer_gpu(e)
+                log.warning("tramo %s de %s: %s falló (%s); pruebo el siguiente", t.seq, t.sala, nombre, e)
+                intentos.append((nombre, e))
+        else:
+            if intentos:
+                return self._error(t, intentos)
+            return self._error(t, [("motor", RuntimeError("no hay ningún backend disponible"))])
 
         if t.final:
             with self._cerrojo:
@@ -128,12 +139,19 @@ class Nucleo:
         self._publicar(t, "final" if t.final else "parcial", orig=res.orig, idioma=res.idioma,
                        es=res.es, en=res.en, backend=nombre, lat_ms=lat)
 
-    def _error(self, t: Tramo, nombre: str, e: BaseException):
+    def _error(self, t: Tramo, intentos: list):
         with self._cerrojo:
             self.errores += 1
-        log.warning("tramo %s de %s falló en %s: %s", t.seq, t.sala, nombre, e)
+        dicho = "; ".join(humanizar(n, e) for n, e in intentos)
+        log.warning("tramo %s de %s sin subtítulo: %s", t.seq, t.sala, dicho)
         if t.final:
-            self._publicar(t, "error", backend=nombre, detalle=f"{type(e).__name__}: {str(e)[:160]}")
+            self._publicar(t, "error", backend=intentos[-1][0], detalle=f"No salió el subtítulo: {dicho}."[:240])
+
+    def cascada(self, pedido: str) -> list[str]:
+        """El orden en que se prueba: lo pedido primero, después el resto."""
+        orden = ["gpu", "gemini", "cpu"]
+        primero = pedido if pedido in orden else "gpu"
+        return [primero] + [x for x in orden if x != primero]
 
     def _caer_gpu(self, e: BaseException):
         with self._cerrojo:

@@ -98,12 +98,11 @@ class TestRespaldoDeLaGPU(unittest.TestCase):
         n.procesar(tramo())
         self.assertEqual(bus.subs[0][1]["backend"], "cpu")
 
-    def test_un_error_que_no_es_de_la_placa_no_tumba_la_gpu(self):
-        n, bus = nucleo({"gpu": Falso(error=ValueError("audio corrupto")), "gemini": Falso()})
+    def test_un_error_que_no_es_de_la_placa_no_tumba_la_gpu_y_el_tramo_sale_igual(self):
+        n, bus = nucleo({"gpu": Falso(error=ValueError("audio corrupto")), "gemini": Falso("por gemini")})
         n.procesar(tramo())
         self.assertEqual(n.gpu, "ok")
-        self.assertEqual(bus.subs[0][1]["tipo"], "error")
-        self.assertIn("audio corrupto", bus.subs[0][1]["detalle"])
+        self.assertEqual((bus.subs[0][1]["tipo"], bus.subs[0][1]["backend"]), ("final", "gemini"))
 
     def test_un_motor_sin_gpu_no_la_crea_al_vuelo(self):
         pedidas = []
@@ -135,6 +134,41 @@ class TestGlosario(unittest.TestCase):
         t.glosario = "ElevenLabs, Nerdearla"
         n.procesar(t)
         self.assertEqual(visto, ["ElevenLabs, Nerdearla"])
+
+
+class TestCascada(unittest.TestCase):
+    def test_gemini_que_no_responde_cae_a_la_gpu(self):
+        import requests
+        gem = Falso(error=requests.exceptions.ReadTimeout("Read timed out. (read timeout=20)"))
+        n, bus = nucleo({"gemini": gem, "gpu": Falso("por gpu")})
+        n.procesar(tramo(backend="gemini"))
+        s = bus.subs[0][1]
+        self.assertEqual((s["tipo"], s["backend"], s["en"]), ("final", "gpu", "por gpu"),
+                         "un Gemini lento no puede dejar a la sala sin subtítulo")
+
+    def test_sin_gpu_ni_gemini_cae_a_cpu(self):
+        n, bus = nucleo({"gemini": Falso(error=RuntimeError("Vertex 503: unavailable")),
+                         "gpu": Falso(error=RuntimeError("CUDA error: device lost")), "cpu": Falso("por cpu")})
+        n.procesar(tramo(backend="gemini"))
+        self.assertEqual(bus.subs[0][1]["backend"], "cpu")
+        self.assertEqual(n.gpu, "caida")
+
+    def test_si_fallan_todos_el_error_se_entiende(self):
+        import requests
+        n, bus = nucleo({"gemini": Falso(error=requests.exceptions.ReadTimeout("Read timed out. (read timeout=20)")),
+                         "gpu": Falso(error=RuntimeError("CUDA error: device lost")),
+                         "cpu": Falso(error=MemoryError())})
+        n.procesar(tramo(backend="gemini"))
+        s = bus.subs[0][1]
+        self.assertEqual(s["tipo"], "error")
+        self.assertEqual(s["detalle"], "No salió el subtítulo: Gemini no respondió a tiempo; "
+                                       "la GPU falló (error de CUDA); la CPU: MemoryError.")
+        self.assertNotIn("HTTPSConnectionPool", s["detalle"])
+
+    def test_humanizar(self):
+        from motor.backends import humanizar
+        self.assertEqual(humanizar("gemini", RuntimeError("Vertex 429: RESOURCE_EXHAUSTED")), "Gemini: cuota agotada")
+        self.assertEqual(humanizar("gemini", RuntimeError("Vertex 403: permission denied")), "Gemini: la credencial no sirve")
 
 
 class TestParciales(unittest.TestCase):
