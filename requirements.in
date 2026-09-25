@@ -1,0 +1,13 @@
+# Lo que el motor importa, y nada más (cada paquete es superficie para el
+# escaneo del pipeline). Las versiones de CTranslate2, faster-whisper y las
+# bibliotecas CUDA son EXACTAMENTE las que midió experimental en la RTX 5070
+# (mediciones/entorno.sh): cambiarlas deja al README describiendo otra cosa.
+ctranslate2==4.8.2
+faster-whisper==1.2.1
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*
+sentencepiece
+numpy
+redis==6.*
+google-auth==2.*
+requests==2.*

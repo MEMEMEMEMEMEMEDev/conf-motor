@@ -1,85 +1,73 @@
+# conf-motor — UN proceso, UNA GPU, todas las salas.
+#
+# Lo que NO se escribe acá, a propósito: ni runtimeClassName, ni
+# nvidia.com/gpu, ni variables NVIDIA_*. La GPU la pone la plataforma al
+# admitir el pod (contrato: `gpu: true`); escribirlo lo rechaza.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  # Platform convention: the contract's `app` service is named
-  # `<organizacion>-app`. The generated NetworkPolicy selects by the
-  # label `app: conf-motor` and the derived IngressRoute looks for the
-  # Service `conf-motor` on 8080 — these names are NOT free.
   name: conf-motor
   labels: {app: conf-motor}
 spec:
   replicas: 1
-  # With 1 replica the default rolling update (maxUnavailable 25% -> 1)
-  # leaves ~30s of Bad Gateway on every update. Surge first, kill after
-  # = zero window; the transient extra pod fits in the `pequena` quota.
-  strategy:
-    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  # Recreate y no rolling update: hay UNA tarjeta. Un segundo pod esperaría
+  # para siempre la GPU que tiene el primero. Cada despliegue del motor
+  # corta lo que tarde en cargar los pesos; el hub lo muestra "degradado".
+  strategy: {type: Recreate}
   selector:
     matchLabels: {app: conf-motor}
   template:
     metadata:
       labels: {app: conf-motor}
     spec:
-      # The pull secret comes from the namespace's default SA: the app
-      # does NOT declare the registry credential.
-      # PSS: the namespace is enforce=restricted and the workload
-      # DECLARES the whole profile (explicit > magic). The image already
-      # runs as USER 65532 (Containerfile) -> runAsNonRoot validates
-      # with no runAsUser here.
       securityContext:
         runAsNonRoot: true
         seccompProfile: {type: RuntimeDefault}
-      # longer than the preStop sleep above plus the app's own shutdown
       terminationGracePeriodSeconds: 30
       containers:
+        # UN contenedor: cada contenedor pediría su propia tarjeta.
         - name: app
-          # The IMAGE is governed by the overlay (kustomize images) and
-          # the pipeline writes the DIGEST into it on every build. This
-          # reference is only the base the overlay rewrites.
           image: registry.registry-system.svc.cluster.local:5000/conf-motor
-          ports: [{containerPort: 8080}]
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
-            # The image is not writable at runtime, so whoever gets
-            # inside cannot leave anything behind: the next restart is
-            # the original bytes again.
             readOnlyRootFilesystem: true
+          env:
+            - {name: BACKEND, value: "gpu"}
+            - {name: MAX_SALAS, value: "28"}
+            - {name: REDIS_ADDR, value: "bus:6379"}
+            - name: REDIS_PASSWORD
+              valueFrom: {secretKeyRef: {name: bus-credenciales, key: password}}
+            # Pesos: el volumen que siembra la plataforma (lo que midió
+            # experimental). Whisper sale de la caché de Hugging Face, sin
+            # red; los traductores, de sus carpetas CTranslate2.
+            - {name: MODELOS, value: "/models"}
+            - {name: HF_HUB_CACHE, value: "/models/hf/hub"}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: HF_HOME, value: "/tmp/hf"}
+            # Gemini (respaldo automático si la GPU falla, y backend por sala).
+            - {name: VERTEX_PROYECTO, value: "aegis-505709"}
+            - {name: VERTEX_REGION, value: "us-central1"}
+            - {name: GEMINI_MODELO, value: "gemini-2.5-flash-lite"}
+            - {name: GOOGLE_APPLICATION_CREDENTIALS, value: "/secrets/vertex/vertex.json"}
           volumeMounts:
-            # The one writable place. python needs it for anything that
-            # spills to disk (tempfile, a multipart upload being parsed);
-            # with a read-only root filesystem there is nowhere else. Keep
-            # it that way: a second writable mount is a second hiding place.
             - {name: tmp, mountPath: /tmp}
-          readinessProbe:
-            httpGet: {path: /healthz, port: 8080}
-          # A stdlib-only python process idles around 25Mi. The limit is
-          # where the pod DIES, so it is not the average: raise it before
-          # you raise the plan.
-          # A RELEASE MUST NOT DROP THE PEOPLE ON THE SITE (plan/19 B-8).
-          # On SIGTERM the pod leaves the Service's endpoints and stops at
-          # the same instant, but traefik keeps routing to it until the
-          # endpoints change reaches it: measured 2026-09-24, every rollout
-          # under 300 req/s dropped ~296 requests in 3 s (502s and 10 s
-          # hangs), on the cloud instance and on Debian alike. Five seconds
-          # of sleep before the signal covers that propagation. The native
-          # `sleep` action needs no shell (the runtime images carry none).
-          lifecycle:
-            preStop:
-              sleep: {seconds: 5}
+            - {name: pesos, mountPath: /models, readOnly: true}
+            - {name: vertex, mountPath: /secrets/vertex, readOnly: true}
+          # Tamaño `inferencia` (contrato): 28 salas midieron ~0,3 núcleos
+          # por sala de CPU de apoyo (el espectrograma de Whisper).
           resources:
-            requests: {cpu: 50m, memory: 48Mi}
-            limits: {cpu: 500m, memory: 160Mi}
+            requests: {cpu: "4", memory: 6Gi}
+            limits: {cpu: "8", memory: 10Gi}
+          # Un worker no escucha: sin Service, sin puerto, sin sonda HTTP.
+          # Su vida se ve en el latido que deja en redis cada 5 s
+          # (conf:motor), que leen el panel y /api/healthz del hub.
       volumes:
-        - {name: tmp, emptyDir: {}}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: conf-motor
-spec:
-  selector: {app: conf-motor}
-  # The platform ALWAYS routes to port 8080 of the Service (convention
-  # of the derived IngressRoute): this port is not changed here, it is
-  # changed in the contract.
-  ports: [{port: 8080, targetPort: 8080}]
+        - name: tmp
+          emptyDir: {sizeLimit: 2Gi}
+        - name: pesos
+          persistentVolumeClaim: {claimName: motor-pesos, readOnly: true}
+        - name: vertex
+          secret:
+            secretName: motor-vertex
+            items: [{key: vertex.json, path: vertex.json}]

@@ -1,0 +1,211 @@
+Extracto de https://ai.google.dev/gemini-api/docs/pricing descargada 2026-09-25T06:32Z. Last updated 2026-09-24 UTC.
+
+===== Gemini 2.5 Flash-Lite
+Gemini 2.5 Flash-Lite
+gemini-2.5-flash-lite
+Try it in Google AI Studio
+A small and cost effective model, built for at scale usage.
+Standard
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price (text, image, video)
+Free of charge
+$0.10 (text / image / video)
+$0.30 (audio)
+Output price (including thinking tokens)
+Free of charge
+$0.40
+Context caching price
+Not available
+$0.01 (text / image / video)
+$0.03 (audio)
+$1.00 / 1,000,000 tokens per hour (storage price)
+Grounding with Google Search
+Free of charge, up to 500 RPD (limit shared with Flash RPD)
+1,500 RPD (free, limit shared with Flash RPD), then $35 / 1,000 grounded prompts
+Grounding with Google Maps
+500 RPD
+1,500 RPD (free), then $25 / 1,000 grounded prompts
+Used to improve our products
+Yes
+No
+Batch
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price (text, image, video)
+Not available
+$0.05 (text / image / video)
+$0.15 (audio)
+Output price (including thinking tokens)
+Not available
+$0.20
+Context caching price
+Not available
+$0.01 (text / image / video)
+$0.03 (audio)
+$1.00 / 1,000,000 tokens per hour (storage price)
+Grounding with Google Search
+Not available
+1,500 RPD (free, limit shared with Flash RPD), then $35 / 1,000 grounded prompts
+Grounding with Google Maps
+Not available
+Not available
+Used to improve our products
+Yes
+No
+Flex
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price (text, image, video)
+Not available
+$0.05 (text / image / video)
+$0.15 (audio)
+Output price (including thinking tokens)
+Not available
+$0.20
+Co
+
+===== Gemini 2.5 Flash Native Audio
+Gemini 2.5 Flash Native Audio (Live API)
+gemini-2.5-flash-native-audio-preview-12-2025
+Try it in Google AI Studio
+Our 
+Live API
+ native audio models optimized for higher
+quality audio outputs with better pacing, voice naturalness, verbosity, and
+mood.
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price
+Free of charge
+$0.50 (text)
+$3.00 (audio / video)
+Output price (including thinking tokens)
+Free of charge
+$2.00 (text)
+$12.00 (audio)
+Used to improve our products
+Yes
+No
+Gemini 2.5 Flash Image (Nano Banana) 🍌
+gemini-2.5-flash-image
+Try it in Google AI Studio
+Warning:
+ Gemini 2.5 Flash Image (
+gemini-2.5-flash-image
+) is 
+deprecated
+ and will be shut down on October 2, 2026; migrate to 
+Gemini 3.1 Flash Image
+ or 
+Gemini 3.1 Flash Lite Image
+ to avoid service disruption.
+A native image generation model, optimized for speed, flexibility, and
+contextual understanding. Text input and output is priced the same as
+2.5 Flash
+.
+Standard
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price
+Not available
+$0.30 (text / image)
+Output price
+Not available
+$0.039 per image*
+Used to improve our products
+Yes
+No
+Batch
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price
+Not available
+$0.15 (text / image)
+Output price
+Not available
+$0.0195 per image*
+Used to improve our products
+Yes
+No
+Flex
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price
+Not available
+$0.15 (text / image)
+Output price
+Not available
+$0.0195 per image*
+Used to improve our products
+Yes
+No
+Priority
+Free Tier
+Paid Tier, per 
+
+===== Gemini 2.5 Flash
+Gemini 2.5 Flash
+gemini-2.5-flash
+Try it in Google AI Studio
+Our first hybrid reasoning model which supports a 1M token context window and
+has thinking budgets.
+Standard
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price
+Free of charge
+$0.30 (text / image / video)
+$1.00 (audio)
+Output price (including thinking tokens)
+Free of charge
+$2.50
+Context caching price
+Not available
+$0.03 (text / image / video)
+$0.1 (audio)
+$1.00 / 1,000,000 tokens per hour (storage price)
+Grounding with Google Search
+Free of charge, up to 500 RPD (limit shared with Flash-Lite RPD)
+1,500 RPD (free, limit shared with Flash-Lite RPD), then $35 / 1,000 grounded prompts
+Grounding with Google Maps
+500 RPD
+1,500 RPD (free), then $25 / 1,000 grounded prompts
+Used to improve our products
+Yes
+No
+Batch
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price
+Not available
+$0.15 (text / image / video)
+$0.50 (audio)
+Output price (including thinking tokens)
+Not available
+$1.25
+Context caching price
+Not available
+$0.03 (text / image / video)
+$0.1 (audio)
+$1.00 / 1,000,000 tokens per hour (storage price)
+Grounding with Google Search
+Not available
+1,500 RPD (free, limit shared with Flash-Lite RPD), then $35 / 1,000 grounded prompts
+Grounding with Google Maps
+Not available
+Not available
+Used to improve our products
+Yes
+No
+Flex
+Free Tier
+Paid Tier, per 1M tokens in USD
+Input price
+Not available
+$0.15 (text / image / video)
+$0.50 (audio)
+Output price (including thinking tokens)
+Not available
+$1.25
+Context caching price

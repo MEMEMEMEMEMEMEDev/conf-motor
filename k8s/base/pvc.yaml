@@ -1,0 +1,12 @@
+# Los pesos del motor (3,3 GB: large-v3-turbo, small y los dos opus-mt).
+# La plataforma los copia adentro la primera vez que el pod lo reclama.
+# No viajan en la imagen: cambiar un modelo no obliga a re-firmarla.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: motor-pesos
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests: {storage: 8Gi}
