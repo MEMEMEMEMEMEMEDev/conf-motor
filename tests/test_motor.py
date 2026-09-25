@@ -206,6 +206,30 @@ class TestOraciones(unittest.TestCase):
         self.assertEqual(oraciones("um you know laughs wickedly"), ["um you know laughs wickedly"])
 
 
+class TestGlosarioEnElTexto(unittest.TestCase):
+    G = "Midudev, Midu.dev, Miguel Ángel Durán, Javier Tebas, la Liga, Instagram, piratería, influencer"
+
+    def test_corrige_lo_que_whisper_escribio_raro(self):
+        from motor.backends import corregir
+        self.assertEqual(corregir("como Midude, que tengo una comunidad", self.G), "como Midudev, que tengo una comunidad")
+        self.assertEqual(corregir("pues soy mi Dudef en las redes", self.G), "pues soy Midudev en las redes")
+        self.assertEqual(corregir("Soy Miguel Angel Duran, más de 15 años", self.G), "Soy Miguel Ángel Durán, más de 15 años")
+        self.assertEqual(corregir("el presidente de la liga, se llama", self.G), "el presidente de la Liga, se llama",
+                         "no puede comerse el «de»")
+
+    def test_no_toca_lo_que_no_se_parece_ni_los_terminos_en_minuscula(self):
+        from motor.backends import corregir
+        t = "los influencers de la piratería hablan de mi casa"
+        self.assertEqual(corregir(t, self.G), t)
+        self.assertEqual(corregir("si buscáis mi ludez lo vais a encontrar", self.G), "si buscáis mi ludez lo vais a encontrar")
+
+    def test_proteger_y_restaurar(self):
+        from motor.backends import proteger, restaurar
+        p, m = proteger("Soy Miguel Ángel Durán, como Midudev.", self.G)
+        self.assertNotIn("Durán", p)
+        self.assertEqual(restaurar("I'm X0X, like X1X.", m), "I'm Miguel Ángel Durán, like Midudev.")
+
+
 class TestGemini(unittest.TestCase):
     def test_interpreta_la_respuesta_con_esquema(self):
         resp = {"candidates": [{"content": {"parts": [{"text": json.dumps(

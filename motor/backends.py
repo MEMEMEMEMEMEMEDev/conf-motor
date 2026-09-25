@@ -79,6 +79,105 @@ def es_error_de_gpu(e: BaseException) -> bool:
 _FIN_ORACION = re.compile(r"(?<=[.!?…])\s+")
 
 
+# ---- el glosario, del lado del texto ------------------------------------------
+#
+# Whisper recibe el glosario como hotwords, pero no alcanza: medido en la
+# charla de midudev salió "Midude", "mi Dudef", y opus-mt traduce los
+# nombres propios ("Miguel Ángel Durán" → "Michelangelo Durán", "Javier
+# Tebas" → "Javier Thebes"). Dos pasos más, puros y con tests:
+#   corregir   después de transcribir: lo que se parece MUCHO a un nombre
+#              del glosario (≥ 85 %, sin espacios ni tildes ni mayúsculas)
+#              se escribe como en el glosario. Sólo para nombres propios
+#              (con mayúscula, punto o dígito): un término en minúscula se
+#              deja como está, para no cambiar "influencers" por "influencer".
+#   proteger   antes de traducir: cada término del glosario presente se
+#              cambia por una marca X0X que opus-mt no toca (probado en los
+#              dos sentidos) y se restaura después.
+
+def terminos(glosario: str) -> list[str]:
+    ts = [t.strip() for t in (glosario or "").split(",") if t.strip()]
+    return sorted(set(ts), key=len, reverse=True)
+
+
+def _norm(x: str) -> str:
+    import unicodedata
+    x = unicodedata.normalize("NFKD", x.lower())
+    return "".join(c for c in x if c.isalnum())
+
+
+def _es_nombre(t: str) -> bool:
+    return any(c.isupper() or c.isdigit() or c == "." for c in t)
+
+
+def corregir(texto: str, glosario: str) -> str:
+    import difflib
+    ts = [t for t in terminos(glosario) if _es_nombre(t) and len(_norm(t)) >= 5]
+    if not ts or not texto:
+        return texto
+    palabras = texto.split(" ")
+    i = 0
+    salida = []
+    while i < len(palabras):
+        hecho = False
+        for n in (3, 2, 1):
+            if i + n > len(palabras):
+                continue
+            tramo = " ".join(palabras[i:i + n])
+            nucleo = tramo.rstrip(".,;:!?…)\"'»")
+            cola = tramo[len(nucleo):]
+            cabeza = ""
+            while nucleo and nucleo[0] in "(\"'«¿¡":
+                cabeza, nucleo = cabeza + nucleo[0], nucleo[1:]
+            k = _norm(nucleo)
+            if not k:
+                continue
+            # El MÁS parecido; a igual parecido, el de largo más cercano a lo
+            # que se escribió ("Midudev" y "Midu.dev" normalizan igual:
+            # dicho "midudev", va "Midudev").
+            mejor = None
+            for t in ts:
+                kt = _norm(t)
+                # Si el tramo tiene MÁS palabras que el término, sólo vale si
+                # es el mismo largo (Whisper partió una palabra: "mi Dudef"
+                # por "Midudev"); si no, "de la liga" se comía el "de".
+                tolera = 3 if n <= len(t.split()) else 1
+                if abs(len(k) - len(kt)) > tolera:
+                    continue
+                r = 1.0 if k == kt else difflib.SequenceMatcher(None, k, kt).ratio()
+                if r >= 0.85:
+                    # A igual parecido: sin punto primero (al hablar nadie
+                    # dice "Midu.dev"), después el de largo más cercano.
+                    clave = (r, "." not in t, -abs(len(t) - len(nucleo)))
+                    if mejor is None or clave > mejor[0]:
+                        mejor = (clave, t)
+            if mejor:
+                salida.append(cabeza + mejor[1] + cola)
+                i += n
+                hecho = True
+                break
+        if not hecho:
+            salida.append(palabras[i])
+            i += 1
+    return " ".join(salida)
+
+
+def proteger(texto: str, glosario: str) -> tuple[str, dict[str, str]]:
+    mapa = {}
+    for t in terminos(glosario):
+        patron = re.compile(r"(?<!\w)" + re.escape(t) + r"(?!\w)", re.IGNORECASE)
+        if patron.search(texto):
+            marca = f"X{len(mapa)}X"
+            texto = patron.sub(marca, texto)
+            mapa[marca] = t
+    return texto, mapa
+
+
+def restaurar(texto: str, mapa: dict[str, str]) -> str:
+    for marca, t in mapa.items():
+        texto = texto.replace(marca, t)
+    return texto
+
+
 def oraciones(texto: str) -> list[str]:
     """Parte un tramo en oraciones. opus-mt se entrenó con oraciones
     sueltas: con dos o tres juntas traduce una y DESCARTA el resto sin
@@ -134,22 +233,23 @@ class Local:
         )
         return " ".join(s.text.strip() for s in segs).strip()
 
-    def traducir(self, texto: str, de: str) -> str:
+    def traducir(self, texto: str, de: str, glosario: str = "") -> str:
         if not texto:
             return ""
         s_src, s_tgt = self.sp[de]
-        lote = [s_src.encode(o, out_type=str) + ["</s>"] for o in oraciones(texto)]
+        protegido, mapa = proteger(texto, glosario)
+        lote = [s_src.encode(o, out_type=str) + ["</s>"] for o in oraciones(protegido)]
         out = self.mt[de].translate_batch(lote, beam_size=2)
-        return " ".join(s_tgt.decode(r.hypotheses[0]) for r in out)
+        return restaurar(" ".join(s_tgt.decode(r.hypotheses[0]) for r in out), mapa)
 
     def procesar(self, tramo, glosario: str = "") -> Resultado | None:
         idioma, final = tramo.idioma, tramo.final
-        orig = self.transcribir(tramo.audio(), idioma, glosario)
+        orig = corregir(self.transcribir(tramo.audio(), idioma, glosario), glosario)
         if not orig:
             return None
         # Los parciales van sin traducción: se reescriben en segundos, y la
         # traducción de media oración confunde más de lo que ayuda.
-        return completar(idioma, orig, self.traducir(orig, idioma) if final else "")
+        return completar(idioma, orig, self.traducir(orig, idioma, glosario) if final else "")
 
 
 def wav(pcm: bytes) -> bytes:
@@ -216,7 +316,7 @@ class Gemini:
         cuerpo = {
             "contents": [{"role": "user", "parts": [
                 {"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(wav(pcm)).decode()}},
-                {"text": instruccion(idioma)},
+                {"text": instruccion(idioma) + (f" Nombres propios y términos, escribilos así: {glosario}." if glosario else "")},
             ]}],
             "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json",
                                  "responseSchema": ESQUEMA, "thinkingConfig": {"thinkingBudget": 0}},
@@ -230,6 +330,9 @@ class Gemini:
             # recorta: un log no es lugar para respuestas enteras.
             raise RuntimeError(f"Vertex {r.status_code}: {r.text[:200]}")
         res = interpretar_gemini(r.json(), idioma)
+        if res and glosario:
+            res.orig = corregir(res.orig, glosario)
+            setattr(res, idioma, res.orig)
         if res and not final:
             setattr(res, DESTINO[idioma], "")
         return res
